@@ -7,7 +7,7 @@
 % 4) Bins ellipse areas and aspect ratios by distance from center (pixels)
 % 5) Converts distances to microns and areas to µm^2
 % 6) Scales error bars by a user-defined factor
-% 7) Plots mean ellipse area ± scaled error vs. radius (µm)
+% 7) Plots mean ellipse area vs. radius (µm)
 % 8) Plots mean aspect ratio vs. radius (µm)
 % 9) Exports binned statistics including pixel and µm units
 %
