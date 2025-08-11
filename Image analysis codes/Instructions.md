@@ -100,7 +100,7 @@ Interactive_mask_editor
 
 ### Step 3: Detailed Morphometric Analysis
 
-Use `ellipse_area_AR_analysism.m` for comprehensive analysis:
+Use `Area_AR_Analysism.m` for comprehensive analysis of cell sizes and aspect ratio:
 
 ```matlab
 % Place updated_mask.npy in your MATLAB working directory
