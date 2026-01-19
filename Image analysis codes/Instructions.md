@@ -1,12 +1,12 @@
 In order to use these codes follow the following instructions.
 # Cell Segmentation and Ellipse Analysis Pipeline
 
-This repository contains a comprehensive pipeline for segmenting cellular images and analyzing cell morphology in spheroids. The workflow combines Python-based deep learning segmentation with MATLAB-based morphometric analysis.
+This repository contains a comprehensive pipeline for segmenting cellular images and analyzing cell morphology in spheroids. The workflow combines Python-based deep learning segmentation with MATLAB-based analysis.
 
 ## Overview
 
 This pipeline enables:
-- Automated cell segmentation using CellSAM
+- Automated batch cell segmentation using CellSAM
 - Interactive mask refinement for quality control
 - Radial analysis of cell area and aspect ratio in spheroids
 - Export of results with physical unit conversions
@@ -22,12 +22,12 @@ This pipeline enables:
 
 2. **Install other required Python packages:**
    ```bash
-   pip install SimpleITK Pillow numpy opencv-python matplotlib pandas torch pathlib
+   pip install SimpleITK numpy matplotlib tqdm
    ```
 
    Or install with conda:
    ```bash
-   conda install -c conda-forge simpleitk pillow numpy opencv matplotlib pandas pytorch
+   conda install -c conda-forge simpleitk numpy matplotlib tqdm
    ```
 
 ### MATLAB Dependencies
@@ -46,42 +46,57 @@ This pipeline enables:
 
 ## Workflow
 
-### Step 1: Initial Segmentation with CellSAM
+### Step 1: Batch Segmentation with CellSAM
 
-Use `CellSAM_pipeline.py` to perform initial cell segmentation:
+Use `CellSAM_pipeline.py` to perform batch cell segmentation on all TIFF images in a directory:
 
 ```python
-# Update these paths in the script
-image_path = "path/to/your/image.tif"  # or .png, .jpg
+# Update these paths in the __main__ section of the script
+input_dir = "path/to/your/tiff/images"
 output_dir = "path/to/output/directory"
 
-# Run the pipeline
-process_single_image(image_path, output_dir)
+# Run the batch pipeline
+success, fail = batch_segment_tifs_resume(
+    input_dir=input_dir,
+    output_dir=output_dir,
+    bbox_threshold=0.3,
+    use_wsi=False,
+    low_contrast_enhancement=False,
+    gauge_cell_size=False,
+    display_first=False
+)
 ```
 
-**What this step does:**
-- Loads and preprocesses your image
-- Performs deep learning-based cell segmentation
-- Generates preliminary analysis including:
-  - Cell area and aspect ratio measurements
-  - Distance-based binning analysis
-  - Visualization outputs (SVG files)
-  - Saves `mask.npy` for further refinement
+**Input Requirements:**
+- **Image format:** TIFF files (.tif or .tiff)
+- **Expected shape:** (3, H, W)
+  - Channel 0: Nuclear signal
+  - Channel 1: Whole-cell signal
+  - Channel 2: Sytox / auxiliary channel (ignored)
 
-**Outputs:**
-- `mask.npy` - Segmentation mask for interactive editing
-- `mask.tif` - TIFF version of the mask
-- `cell_data.csv` - Initial cell measurements
-- `colored_contours.svg` - Ellipse overlays
-- `ellipse_overlay.svg` - Ellipses on original image
-- `visualization.svg` - Three-panel comparison
+**Key Parameters:**
+- `bbox_threshold`: Bounding box confidence threshold (0.2-0.5, default 0.3)
+- `use_wsi`: Enable whole-slide-image tiling (disabled by default due to known issues)
+- `low_contrast_enhancement`: Enable contrast enhancement preprocessing
+- `gauge_cell_size`: Enable automatic cell size estimation
+- `display_first`: Show visualization for first processed image (useful for debugging)
+
+**Resume Capability:**
+The pipeline automatically skips images that have already been processed (where `mask.npy` exists in the output subdirectory). This allows you to safely re-run the script if processing is interrupted.
+
+**Outputs (per image):**
+For each input image, a subdirectory is created containing:
+- `mask.npy` - Integer-labeled segmentation mask for further analysis
+- `nuclear.png` - Nuclear channel visualization
+- `whole_cell.png` - Whole-cell channel visualization
+- `mask.png` - Colorized segmentation mask
 
 ### Step 2: Interactive Mask Refinement
 
 Use `Interactive_mask_editor.m` to manually refine the segmentation:
 
 ```matlab
-% Place mask.npy in your MATLAB working directory
+% Copy mask.npy from your desired image output folder to MATLAB working directory
 % Run the interactive editor
 Interactive_mask_editor
 ```
@@ -98,14 +113,16 @@ Interactive_mask_editor
 - Clean up over-segmented cells
 - Ensure only valid cells are included in analysis
 
+**Note:** You need to run this step separately for each image you want to analyze. Copy the `mask.npy` from the specific image's output folder to your MATLAB working directory before running the editor.
+
 ### Step 3: Detailed Morphometric Analysis
 
-Use `Area_AR_Analysism.m` for comprehensive analysis of cell sizes and aspect ratio:
+Use `Area_AR_Analysis.m` for comprehensive analysis of cell sizes and aspect ratio:
 
 ```matlab
-% Place updated_mask.npy in your MATLAB working directory
+% Copy updated_mask.npy from Step 2 to your MATLAB working directory
 % Run the analysis script
-ellipse_area_AR_analysism
+Area_AR_Analysis
 ```
 
 **Interactive steps:**
@@ -120,18 +137,19 @@ numBins = 10;  % Increase for more layers, decrease for fewer layers
 
 % Physical scale conversion
 real_radius_um = 208;  % Update with your spheroid's actual radius in microns
+```
 
 **Outputs:**
-- `AR_Area_Data_Best_*.csv` - Binned statistics with physical units
-- Multiple plots showing:
-  - Mean ellipse area vs. radial position
-  - Mean aspect ratio vs. radial position
-  - Both in pixel and micron units
+- Radial profile plots showing:
+  - Mean ellipse area vs. radial position (in microns)
+  - Mean aspect ratio vs. radial position (in microns)
+  - Error bars representing standard error of the mean (SEM)
 
+## Configuration
 
 ### Setting Physical Scale
 
-Update the physical scale based on your imaging setup:
+Update the physical scale based on your imaging setup in `Area_AR_Analysis.m`:
 
 ```matlab
 % Option 1: If you know the spheroid radius
@@ -143,16 +161,23 @@ pixel_size_um = 0.325;  % microns per pixel
 % pixel_to_um = pixel_size_um;
 ```
 
-### Memory Management
+### Adjusting Segmentation Quality
 
-For large images, the Python pipeline includes memory management features:
+In `CellSAM_pipeline.py`, you can adjust these parameters:
 
 ```python
-# Adjust batch size for label processing (reduce if memory issues)
-batch_size = 100  # Process 100 labels at a time
-
-# GPU memory is automatically cleared between operations
+bbox_threshold=0.3           # Lower (0.2) = more sensitive, Higher (0.5) = more specific
+low_contrast_enhancement=True  # Enable for low-contrast images
+gauge_cell_size=True          # Enable for automatic cell size detection
 ```
+
+### Memory Management
+
+For large datasets, the Python pipeline includes automatic memory management:
+- Garbage collection after each image
+- Explicit array deletion
+- Matplotlib figure cleanup
+- Batch processing with progress tracking
 
 ## Troubleshooting
 
@@ -160,18 +185,31 @@ batch_size = 100  # Process 100 labels at a time
 
 1. **"readNPY not found"**
    - Ensure npy-matlab is installed and added to MATLAB path
+   - Verify installation: `which readNPY` in MATLAB should show the path
 
-2. **Memory errors in Python**
-   - Reduce batch_size in the pipeline
-   - Use smaller images or crop regions of interest
+2. **"Unexpected TIFF shape" error**
+   - Verify your TIFF has shape (3, H, W)
+   - Check channel order: nuclear (0), whole-cell (1), auxiliary (2)
+   - Use ImageJ or Python to inspect: `sitk.GetArrayFromImage(sitk.ReadImage('file.tif')).shape`
 
-3. **Poor segmentation quality**
-   - Adjust bbox_threshold in segment_cellular_image (try 0.2-0.5)
+3. **Memory errors in Python**
+   - Process smaller batches of images at a time
+   - Close other applications to free up RAM
+   - Set `display_first=False` to reduce memory usage
+
+4. **Poor segmentation quality**
+   - Adjust `bbox_threshold` (try values between 0.2-0.5)
+   - Enable `low_contrast_enhancement=True` for dim images
    - Use the interactive editor to clean up results
 
-4. **Scale conversion issues**
-   - Verify your physical measurements
-   - Check that pixel-to-micron conversion is appropriate for your imaging setup
+5. **Scale conversion issues**
+   - Verify your physical measurements using ImageJ or similar
+   - Check that spheroid radius measurement is accurate
+   - Ensure pixel-to-micron conversion matches your microscope settings
+
+6. **"sem_AR not defined" error in MATLAB**
+   - This appears to be a typo in line 106 of Area_AR_Analysis.m
+   - Should be `semAR` (consistent with line 56)
 
 ### Output File Descriptions
 
@@ -179,10 +217,34 @@ batch_size = 100  # Process 100 labels at a time
 |------|-------------|
 | `mask.npy` | Initial segmentation mask from CellSAM |
 | `updated_mask.npy` | Refined mask after interactive editing |
-| `cell_data.csv` | Individual cell measurements |
-| `AR_Area_Data_*.csv` | Binned radial statistics |
-| `*.svg` | Vector graphics for publications |
+| `nuclear.png` | Nuclear channel visualization |
+| `whole_cell.png` | Whole-cell channel visualization |
+| `mask.png` | Colorized segmentation mask |
 
+## Typical Workflow Example
+
+1. **Prepare your data:**
+   - Organize all TIFF images in a single input directory
+   - Verify TIFF format (3, H, W) with correct channel order
+
+2. **Run batch segmentation:**
+   ```bash
+   python CellSAM_pipeline.py
+   ```
+   - Monitor progress and check for any failed images
+   - Review output folders to verify segmentation quality
+
+3. **For each spheroid of interest:**
+   - Copy `mask.npy` to MATLAB working directory
+   - Run `Interactive_mask_editor.m` to clean up segmentation
+   - Run `Area_AR_Analysis.m` to perform radial analysis
+   - Update `real_radius_um` with measured spheroid radius
+   - Click to select center point
+   - Save/export generated plots and data
+
+4. **Analyze results:**
+   - Compare radial profiles across conditions
+   - Use exported data for statistical analysis
 
 ## Support
 
